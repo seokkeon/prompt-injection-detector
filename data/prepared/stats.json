@@ -1,0 +1,28 @@
+{
+  "total": 1686,
+  "train": 1348,
+  "val": 168,
+  "test": 170,
+  "benign_total": 8803,
+  "injection_total": 281,
+  "train_label_dist": {
+    "0": 675,
+    "1": 673
+  },
+  "val_label_dist": {
+    "1": 88,
+    "0": 80
+  },
+  "test_label_dist": {
+    "1": 82,
+    "0": 88
+  },
+  "sources": {
+    "deepset/prompt-injections": 824,
+    "UltraInteract_pair": 216,
+    "ultrachat": 535,
+    "HelpSteer": 54,
+    "curated_malicious": 45,
+    "PKU-SafeRLHF_autolabeled": 12
+  }
+}
