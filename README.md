@@ -10,7 +10,7 @@ A security tool to detect hidden prompt injections in images and emails that cou
 - **REST API** — FastAPI backend for integration with other services
 - **Web UI** — Simple frontend dashboard (coming in Phase 4)
 
-## Project Structure
+## Project Structure (needs update)
 
 ```
 prompt-injection-detector/
@@ -44,7 +44,7 @@ prompt-injection-detector/
 └── README.md
 ```
 
-## Setup
+## Setup (needs update)
 
 ### 1. Clone & create virtual environment
 
@@ -53,7 +53,8 @@ git clone <your-repo>
 cd prompt-injection-detector
 
 python -m venv venv
-source venv/bin/activate         # Windows: venv\Scripts\activate
+source venv/bin/activate #im using macos
+# Windows: venv\Scripts\activate
 ```
 
 ### 2. Install dependencies
@@ -78,7 +79,7 @@ sudo apt-get install tesseract-ocr
 ### 4. Configure environment
 
 ```bash
-cp .env.example .env
+cp .env .env
 # Edit .env with your settings
 ```
 
