@@ -82,14 +82,20 @@ export default function ResultCard({ result }: Props) {
         </div>
       )}
 
-      {/* Extracted text (image) */}
-      {result.extracted_text && (
+      {/* Extracted text (image) — always shown */}
+      {result.extracted_text !== undefined && (
         <div className="detail-section">
           <div className="detail-title">Extracted Text</div>
-          <div className="explanation" style={{ fontFamily: "monospace", fontSize: 12 }}>
-            {result.extracted_text.slice(0, 300)}
-            {result.extracted_text.length > 300 ? "..." : ""}
-          </div>
+          {result.extracted_text ? (
+            <div className="explanation" style={{ fontFamily: "monospace", fontSize: 12 }}>
+              {result.extracted_text.slice(0, 500)}
+              {result.extracted_text.length > 500 ? "..." : ""}
+            </div>
+          ) : (
+            <div className="explanation" style={{ color: "#a0aec0", fontStyle: "italic" }}>
+              No text detected in image.
+            </div>
+          )}
         </div>
       )}
     </div>
