@@ -38,7 +38,7 @@ try:
 except ImportError:
     pass
 
-from src.detectors.text_detector import TextInjectionDetector
+from src.detectors.unified_detector import UnifiedDetector as TextInjectionDetector  # merged
 from src.utils.logger import logger
 
 # ── Config ────────────────────────────────────────────────────────────────────

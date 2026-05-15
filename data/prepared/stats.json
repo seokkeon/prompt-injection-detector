@@ -1,28 +1,25 @@
 {
-  "total": 1686,
-  "train": 1348,
-  "val": 168,
-  "test": 170,
-  "benign_total": 8803,
-  "injection_total": 281,
+  "total": 826,
+  "train": 660,
+  "val": 82,
+  "test": 84,
+  "benign_total": 413,
+  "injection_total": 277,
   "train_label_dist": {
-    "0": 675,
-    "1": 673
+    "1": 328,
+    "0": 332
   },
   "val_label_dist": {
-    "1": 88,
-    "0": 80
+    "0": 34,
+    "1": 48
   },
   "test_label_dist": {
-    "1": 82,
-    "0": 88
+    "0": 47,
+    "1": 37
   },
   "sources": {
-    "deepset/prompt-injections": 824,
-    "UltraInteract_pair": 216,
-    "ultrachat": 535,
-    "HelpSteer": 54,
-    "curated_malicious": 45,
-    "PKU-SafeRLHF_autolabeled": 12
+    "deepset/prompt-injections": 796,
+    "curated_malicious": 15,
+    "curated_benign": 15
   }
 }

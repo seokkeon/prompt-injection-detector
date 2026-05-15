@@ -1,45 +1,18 @@
-# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
+.venv/
 venv/
 env/
-.venv/
-*.egg-info/
-dist/
-build/
-
-# Environment
 .env
-.env.local
-
-# Logs
 logs/
 *.log
-
-# Models (large files)
 models/cache/
 models/trained/
-
-# Data samples (may contain sensitive test data)
-data/malicious_samples/
-data/benign_samples/
-
-# Testing
+data/prepared/
+data/raw/
 .pytest_cache/
 .coverage
 htmlcov/
-
-# IDE
 .vscode/
 .idea/
-*.swp
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Docker
-*.pid

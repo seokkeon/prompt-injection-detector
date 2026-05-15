@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: prompt-injection-detector
+Version: 1.0.0
+Summary: Detect hidden prompt injections in images and emails
+Requires-Python: >=3.10
+Requires-Dist: pillow
+Requires-Dist: opencv-python
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: pytesseract
+Requires-Dist: beautifulsoup4
+Requires-Dist: lxml
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: pydantic
+Requires-Dist: python-multipart
+Requires-Dist: python-dotenv
+Requires-Dist: loguru
+Requires-Dist: rich
+Provides-Extra: ml
+Requires-Dist: torch; extra == "ml"
+Requires-Dist: transformers; extra == "ml"
+Requires-Dist: sentence-transformers; extra == "ml"
+Requires-Dist: scikit-learn; extra == "ml"
+Requires-Dist: datasets; extra == "ml"
+Provides-Extra: ocr
+Requires-Dist: easyocr; extra == "ocr"
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: httpx; extra == "dev"
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
