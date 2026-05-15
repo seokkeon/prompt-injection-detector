@@ -2,12 +2,22 @@ import React, { useState } from "react";
 import TextAnalyzer from "./components/TextAnalyzer";
 import ImageAnalyzer from "./components/ImageAnalyzer";
 import EmailAnalyzer from "./components/EmailAnalyzer";
+import IndirectAnalyzer from "./components/IndirectAnalyzer";
+import ConversationAnalyzer from "./components/ConversationAnalyzer";
 import "./App.css";
 
-type Tab = "text" | "image" | "email";
+type Tab = "text" | "image" | "email" | "indirect" | "conversation";
 
 function App() {
   const [tab, setTab] = useState<Tab>("text");
+
+  const tabLabels: Record<Tab, string> = {
+    text: "📝 Text",
+    image: "🖼️ Image",
+    email: "📧 Email",
+    indirect: "🔗 Indirect",
+    conversation: "💬 Conversation",
+  };
 
   return (
     <div className="app">
@@ -17,7 +27,7 @@ function App() {
             <span className="logo-icon">🛡️</span>
             <div>
               <h1>Prompt Injection Detector</h1>
-              <p>Detect hidden prompt injections in text, images, and emails</p>
+              <p>Detect hidden prompt injections in text, images, emails, and conversations</p>
             </div>
           </div>
           <a
@@ -33,13 +43,13 @@ function App() {
 
       <main className="main">
         <div className="tabs">
-          {(["text", "image", "email"] as Tab[]).map((t) => (
+          {(["text", "image", "email", "indirect", "conversation"] as Tab[]).map((t) => (
             <button
               key={t}
               className={`tab ${tab === t ? "tab-active" : ""}`}
               onClick={() => setTab(t)}
             >
-              {t === "text" ? "📝 Text" : t === "image" ? "🖼️ Image" : "📧 Email"}
+              {tabLabels[t]}
             </button>
           ))}
         </div>
@@ -48,6 +58,8 @@ function App() {
           {tab === "text"  && <TextAnalyzer />}
           {tab === "image" && <ImageAnalyzer />}
           {tab === "email" && <EmailAnalyzer />}
+          {tab === "indirect" && <IndirectAnalyzer />}
+          {tab === "conversation" && <ConversationAnalyzer />}
         </div>
       </main>
     </div>
