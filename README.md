@@ -2,6 +2,7 @@
 
 Detects hidden prompt injections in text, images, emails, web pages, and multi-turn conversations that could cause AI systems to leak data to attackers.
 
+
 ---
 
 ## Features
