@@ -11,12 +11,15 @@ This is the single entry point for ALL text-based detection:
 Import: from src.detectors.unified_detector import UnifiedDetector
 """
 
+import asyncio
+import functools
+import hashlib
 import os
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -52,10 +55,17 @@ except ImportError:
     BS4_AVAILABLE = False
 
 try:
-    import requests
-    REQUESTS_AVAILABLE = True
+    import httpx
+    HTTPX_AVAILABLE = True
 except ImportError:
-    REQUESTS_AVAILABLE = False
+    HTTPX_AVAILABLE = False
+    try:
+        import requests
+        REQUESTS_AVAILABLE = True
+    except ImportError:
+        REQUESTS_AVAILABLE = False
+else:
+    REQUESTS_AVAILABLE = False  # prefer httpx
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -158,6 +168,16 @@ TRIGGER_KEYWORDS = [
     "base64","rot13","[system]","<system>","### instruction",
 ]
 
+
+# Pre-built mega-regex: one pass to detect ANY injection signal before running
+# individual patterns. Avoids O(n*m) when text is clean.
+_MEGA_PATTERN = re.compile(
+    "|".join(p for p, _ in INJECTION_PATTERNS),
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# LRU cache size for ML predictions (prevents redundant model calls)
+_ML_CACHE_SIZE = 512
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Result dataclasses
@@ -355,6 +375,11 @@ class UnifiedDetector:
         with torch.no_grad():
             return float(torch.softmax(self._model(**inputs).logits, dim=1)[0][1].item())
 
+    @functools.lru_cache(maxsize=_ML_CACHE_SIZE)
+    def _ml_score_cached(self, text_hash: str, text: str) -> float:
+        """LRU-cached ML prediction. Keyed by hash to avoid huge cache keys."""
+        return self._ml_score(text)
+
     def _fuse(self, rule: float, ml: Optional[float]) -> float:
         if ml is None:                     return rule
         if rule < 0.35 and ml >= 0.75:    return ml * 0.9
@@ -381,12 +406,17 @@ class UnifiedDetector:
         if not text or not text.strip():
             return DetectionResult(False, "low", 0.0, 0.0, None, self.ml_available, "Empty input.")
 
-        matches    = self._scan_rules(text)
+        # Fast path: mega-regex first pass — skip individual scans if no signal
+        has_any_signal = bool(_MEGA_PATTERN.search(text))
+        matches    = self._scan_rules(text) if has_any_signal else []
         rule_score = self._rule_score(matches)
         ml_score   = None
 
         if self.ml_available:
-            try:    ml_score = self._ml_score(text)
+            try:
+                # Use cached prediction — same text never runs the model twice
+                text_hash = hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
+                ml_score  = self._ml_score_cached(text_hash, text)
             except Exception as e: logger.error(f"ML error: {e}")
 
         final = self._fuse(rule_score, ml_score)
@@ -433,14 +463,48 @@ class UnifiedDetector:
                    + min(hidden_count*0.15, 0.3), 1.0)
 
     def detect_indirect_url(self, url: str) -> IndirectResult:
-        if not REQUESTS_AVAILABLE:
-            return IndirectResult(False,"low",0.0,"url",url,explanation="pip install requests")
+        """Sync wrapper — calls async fetch in a thread-safe way."""
         try:
-            resp = requests.get(url, timeout=10, headers={"User-Agent":"InjectionDetector/1.0"})
-            resp.raise_for_status()
-            return self._analyze_html(resp.text, source=url, source_type="url")
-        except Exception as e:
-            return IndirectResult(False,"low",0.0,"url",url,explanation=f"Fetch failed: {e}")
+            html = asyncio.get_event_loop().run_until_complete(self._fetch_url_async(url))
+        except RuntimeError:
+            # Already inside an event loop (FastAPI) — run in thread pool
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(self._fetch_url_sync, url)
+                html   = future.result(timeout=12)
+        if html is None:
+            return IndirectResult(False,"low",0.0,"url",url,explanation="Fetch failed or no network.")
+        return self._analyze_html(html, source=url, source_type="url")
+
+    async def detect_indirect_url_async(self, url: str) -> IndirectResult:
+        """Async version — use this inside FastAPI endpoints for true non-blocking."""
+        html = await self._fetch_url_async(url)
+        if html is None:
+            return IndirectResult(False,"low",0.0,"url",url,explanation="Fetch failed.")
+        return self._analyze_html(html, source=url, source_type="url")
+
+    async def _fetch_url_async(self, url: str) -> Optional[str]:
+        if HTTPX_AVAILABLE:
+            try:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    resp = await client.get(url, headers={"User-Agent":"InjectionDetector/1.0"})
+                    resp.raise_for_status()
+                    return resp.text
+            except Exception as e:
+                logger.error(f"httpx fetch failed: {e}")
+                return None
+        return self._fetch_url_sync(url)
+
+    def _fetch_url_sync(self, url: str) -> Optional[str]:
+        if REQUESTS_AVAILABLE:
+            try:
+                import requests as _req
+                resp = _req.get(url, timeout=10, headers={"User-Agent":"InjectionDetector/1.0"})
+                resp.raise_for_status()
+                return resp.text
+            except Exception as e:
+                logger.error(f"requests fetch failed: {e}")
+        return None
 
     def detect_indirect_html(self, html: str, source: str = "inline") -> IndirectResult:
         return self._analyze_html(html, source=source, source_type="html")
@@ -499,7 +563,13 @@ class UnifiedDetector:
         user_turns = [t for t in turns if t.role == "user"]
 
         scores    = [t.risk_score for t in user_turns]
-        gradual   = len(user_turns) >= 3 and sum(1 for i in range(1,len(scores)) if scores[i] > scores[i-1]+0.05) >= 2
+        # Vectorized: diff array, count increases > 0.05 threshold
+        if NP_AVAILABLE and len(scores) >= 3:
+            arr     = np.array(scores)
+            diffs   = np.diff(arr)
+            gradual = int(np.sum(diffs > 0.05)) >= 2
+        else:
+            gradual = len(user_turns) >= 3 and sum(1 for i in range(1,len(scores)) if scores[i] > scores[i-1]+0.05) >= 2
         role_drift = any("role_drift_signal"        in t.flags for t in turns)
         delayed    = any("delayed_trigger_setup"     in t.flags for t in turns)
         persona    = any("persona_anchoring"         in t.flags for t in turns)
@@ -566,12 +636,15 @@ class UnifiedDetector:
             inputs  = self._tokenizer(text, return_tensors="pt", truncation=True, max_length=256, padding=True).to(self._device)
             outputs = self._model(**inputs, output_attentions=True)
             tokens  = self._tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])[1:-1]
-            rollout = torch.eye(outputs.attentions[0].shape[-1]).to(self._device)
-            for attn in outputs.attentions:
-                a = attn[0].mean(dim=0)
-                a = (a + torch.eye(a.shape[0]).to(self._device))
-                a = a / a.sum(dim=-1, keepdim=True)
-                rollout = torch.matmul(rollout, a)
+            seq_len = outputs.attentions[0].shape[-1]
+            eye     = torch.eye(seq_len).to(self._device)
+            # Stack all layers: (num_layers, seq, seq) — process in one vectorized pass
+            stacked = torch.stack([attn[0].mean(dim=0) for attn in outputs.attentions])
+            stacked = stacked + eye.unsqueeze(0)
+            stacked = stacked / stacked.sum(dim=-1, keepdim=True)
+            rollout = eye.clone()
+            for layer in stacked:          # still sequential but with pre-normalized tensors
+                rollout = torch.matmul(rollout, layer)
             imp = rollout[0, 1:-1].cpu().numpy()
             if imp.max() > 0: imp = imp / imp.max()
             threshold = float(np.percentile(imp, 75))

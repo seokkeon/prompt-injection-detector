@@ -1,23 +1,19 @@
 import React, { useState } from "react";
-import TextAnalyzer from "./components/TextAnalyzer";
+import UnifiedAnalyzer from "./components/UnifiedAnalyzer";
 import ImageAnalyzer from "./components/ImageAnalyzer";
 import EmailAnalyzer from "./components/EmailAnalyzer";
-import IndirectAnalyzer from "./components/IndirectAnalyzer";
-import ConversationAnalyzer from "./components/ConversationAnalyzer";
 import "./App.css";
 
-type Tab = "text" | "image" | "email" | "indirect" | "conversation";
+type Tab = "unified" | "image" | "email";
 
-function App() {
-  const [tab, setTab] = useState<Tab>("text");
+const TABS: { id: Tab; label: string }[] = [
+  { id: "unified", label: "🔍 Text & Analysis" },
+  { id: "image",   label: "🖼️ Image" },
+  { id: "email",   label: "📧 Email" },
+];
 
-  const tabLabels: Record<Tab, string> = {
-    text: "📝 Text",
-    image: "🖼️ Image",
-    email: "📧 Email",
-    indirect: "🔗 Indirect",
-    conversation: "💬 Conversation",
-  };
+export default function App() {
+  const [tab, setTab] = useState<Tab>("unified");
 
   return (
     <div className="app">
@@ -27,15 +23,10 @@ function App() {
             <span className="logo-icon">🛡️</span>
             <div>
               <h1>Prompt Injection Detector</h1>
-              <p>Detect hidden prompt injections in text, images, emails, and conversations</p>
+              <p>Detect hidden prompt injections in text, images, emails, URLs, and conversations</p>
             </div>
           </div>
-          <a
-            href="http://localhost:8000/docs"
-            target="_blank"
-            rel="noreferrer"
-            className="api-link"
-          >
+          <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer" className="api-link">
             API Docs ↗
           </a>
         </div>
@@ -43,27 +34,23 @@ function App() {
 
       <main className="main">
         <div className="tabs">
-          {(["text", "image", "email", "indirect", "conversation"] as Tab[]).map((t) => (
+          {TABS.map(t => (
             <button
-              key={t}
-              className={`tab ${tab === t ? "tab-active" : ""}`}
-              onClick={() => setTab(t)}
+              key={t.id}
+              className={`tab ${tab === t.id ? "tab-active" : ""}`}
+              onClick={() => setTab(t.id)}
             >
-              {tabLabels[t]}
+              {t.label}
             </button>
           ))}
         </div>
 
         <div className="panel">
-          {tab === "text"  && <TextAnalyzer />}
-          {tab === "image" && <ImageAnalyzer />}
-          {tab === "email" && <EmailAnalyzer />}
-          {tab === "indirect" && <IndirectAnalyzer />}
-          {tab === "conversation" && <ConversationAnalyzer />}
+          {tab === "unified" && <UnifiedAnalyzer />}
+          {tab === "image"   && <ImageAnalyzer />}
+          {tab === "email"   && <EmailAnalyzer />}
         </div>
       </main>
     </div>
   );
 }
-
-export default App;

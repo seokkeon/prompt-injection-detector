@@ -14,6 +14,7 @@ Endpoints:
   GET  /stats                    — runtime counters
 """
 
+import asyncio
 import os, sys, time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -91,9 +92,16 @@ async def analyze_text(req: TextRequest):
 
 @app.post("/analyze/text/batch")
 async def analyze_batch(req: BatchRequest):
+    # Run all detections in parallel using thread pool (CPU-bound work)
+    loop = asyncio.get_event_loop()
+    tasks = [
+        loop.run_in_executor(None, detector.detect, t)
+        for t in req.texts
+    ]
+    detections = await asyncio.gather(*tasks)
     results = []
-    for t in req.texts:
-        r = detector.detect(t); results.append(r.to_dict())
+    for r in detections:
+        results.append(r.to_dict())
         _s["text"]+=1; _s["score_sum"]+=r.risk_score
         if r.is_suspicious: _s["flagged"]+=1
     return {"count":len(results),"flagged":sum(1 for r in results if r["is_suspicious"]),"results":results}
@@ -128,7 +136,8 @@ async def analyze_email(file: UploadFile = File(...)):
 
 @app.post("/analyze/indirect/url")
 async def analyze_url(req: URLRequest):
-    r = detector.detect_indirect_url(req.url)
+    # Uses async httpx — does not block the FastAPI worker thread
+    r = await detector.detect_indirect_url_async(req.url)
     _s["indirect"]+=1; _s["score_sum"]+=r.risk_score
     if r.is_suspicious: _s["flagged"]+=1
     return r.to_dict()

@@ -111,40 +111,51 @@ class ImageInjectionDetector:
     # ── OCR ───────────────────────────────────────────────────────────────────
 
     def _extract_text(self, image_path: str) -> Dict:
-        """Extract visible + hidden text via multi-strategy OCR."""
+        """Extract visible + hidden text via 6 strategic OCR passes (was 51+).
+
+        Passes chosen to cover the main injection hiding techniques:
+          1. Baseline grayscale              — normal visible text
+          2. Inverted                        — dark-on-dark / negative text
+          3. Adaptive threshold              — low-contrast text
+          4. Near-white isolation            — white-on-white invisible text
+          5. High-contrast enhancement x10   — faint watermark-style text
+          6. Blue channel isolation          — text hidden in single color channel
+        """
         if not TESSERACT_AVAILABLE:
             return {"visible_text": "", "hidden_texts": [], "hidden_text_detected": False}
         try:
-            img_bgr  = cv2.imread(image_path)
+            img_bgr = cv2.imread(image_path)
             if img_bgr is None:
                 return {"error": "Cannot read image", "visible_text": "", "hidden_texts": []}
+
             gray     = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
             baseline = pytesseract.image_to_string(gray).strip()
             all_texts = {baseline}
 
-            for thresh in range(0, 256, 5):
-                _, t = cv2.threshold(gray, thresh, 255, cv2.THRESH_BINARY)
-                txt = pytesseract.image_to_string(t).strip()
-                if txt: all_texts.add(txt)
-
-            for ch in cv2.split(img_bgr):
-                txt = pytesseract.image_to_string(ch).strip()
-                if txt: all_texts.add(txt)
-
+            # Pass 2: inverted (dark-on-dark text)
             inv = cv2.bitwise_not(gray)
             all_texts.add(pytesseract.image_to_string(inv).strip())
 
-            # Near-white isolation (white-on-white text)
-            mask = cv2.inRange(img_bgr, np.array([200,200,200]), np.array([255,255,255]))
+            # Pass 3: adaptive threshold (handles uneven lighting / low-contrast)
+            adaptive = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            all_texts.add(pytesseract.image_to_string(adaptive).strip())
+
+            # Pass 4: near-white isolation (white-on-white hidden text)
+            mask     = cv2.inRange(img_bgr, np.array([200,200,200]), np.array([255,255,255]))
             isolated = cv2.cvtColor(cv2.bitwise_and(img_bgr, img_bgr, mask=mask), cv2.COLOR_BGR2GRAY)
             _, inv_iso = cv2.threshold(isolated, 200, 255, cv2.THRESH_BINARY_INV)
             all_texts.add(pytesseract.image_to_string(inv_iso).strip())
 
-            # Gamma correction
-            pil = Image.open(image_path).convert("L")
-            for factor in [5.0, 10.0, 20.0]:
-                enhanced = ImageEnhance.Contrast(pil).enhance(factor)
-                all_texts.add(pytesseract.image_to_string(enhanced).strip())
+            # Pass 5: high contrast enhancement (faint / watermark text)
+            pil      = Image.open(image_path).convert("L")
+            enhanced = ImageEnhance.Contrast(pil).enhance(10.0)
+            all_texts.add(pytesseract.image_to_string(enhanced).strip())
+
+            # Pass 6: blue channel (color-specific hidden text)
+            b_channel = cv2.split(img_bgr)[0]
+            all_texts.add(pytesseract.image_to_string(b_channel).strip())
 
             hidden = [t for t in all_texts if t and t != baseline]
             return {
@@ -227,8 +238,8 @@ class ImageInjectionDetector:
 
     def _scan_exif(self, image_path: str) -> Dict:
         """Extract and flag suspicious EXIF metadata fields."""
-        SUSPICIOUS = ["ImageDescription","Artist","Copyright","UserComment",
-                      "Software","Comment","XPComment","XPAuthor","DocumentName"]
+        SUSPICIOUS     = {"imagedescription","artist","copyright","usercomment",
+                           "software","comment","xpcomment","xpauthor","documentname"}
         try:
             img      = Image.open(image_path)
             metadata = {}
@@ -256,8 +267,9 @@ class ImageInjectionDetector:
                 for k, v in img.text.items():
                     if v.strip(): metadata[f"PNG:{k}"] = v.strip()
 
+            # O(1) set lookup per key instead of O(n) linear scan
             suspicious = {k: v for k, v in metadata.items()
-                          if any(s.lower() in k.lower() for s in SUSPICIOUS) or len(str(v)) > 50}
+                          if k.lower() in SUSPICIOUS or len(str(v)) > 50}
             return {"all_metadata": metadata, "suspicious_fields": suspicious,
                     "has_suspicious": bool(suspicious)}
         except Exception as e:
@@ -338,12 +350,21 @@ class ImageInjectionDetector:
         exif   = self._scan_exif(image_path)
         adv    = self._detect_adversarial(image_path)
 
-        # Add QR content to text scan
-        qr_texts = [f"[QR:{c.get('type','')}] {c.get('data','')}" for c in qr.get("codes_found", [])]
-        full_text = (all_text + "\n" + "\n".join(qr_texts)).strip()
-
-        text_result = self.text_detector.detect(full_text) if full_text else None
+        # Analyze OCR text and QR text independently — avoids re-running
+        # detection on already-analyzed OCR content when QR data arrives
+        text_result = self.text_detector.detect(all_text) if all_text else None
         text_score  = text_result.risk_score if text_result else 0.0
+
+        qr_texts = [f"[QR:{c.get('type','')}] {c.get('data','')}" for c in qr.get("codes_found", [])]
+        if qr_texts:
+            qr_combined = "\n".join(qr_texts)
+            qr_result   = self.text_detector.detect(qr_combined)
+            # Take the higher of the two scores rather than re-running on concatenation
+            text_score  = max(text_score, qr_result.risk_score)
+            if text_result is None:
+                text_result = qr_result
+
+        full_text = (all_text + "\n" + "\n".join(qr_texts)).strip()
 
         hidden_detected = ocr.get("hidden_text_detected", False)
         qr_count        = qr.get("count", 0)
