@@ -1,56 +1,80 @@
 import React, { useState } from "react";
-import UnifiedAnalyzer from "./components/UnifiedAnalyzer";
-import ImageAnalyzer from "./components/ImageAnalyzer";
-import EmailAnalyzer from "./components/EmailAnalyzer";
 import "./App.css";
+import TextAnalyzer from "./components/TextAnalyzer";
+import EmailAnalyzer from "./components/EmailAnalyzer";
+import ImageAnalyzer from "./components/ImageAnalyzer";
+import ConversationAnalyzer from "./components/ConversationAnalyzer";
+import IndirectAnalyzer from "./components/IndirectAnalyzer";
 
-type Tab = "unified" | "image" | "email";
+type TabType = "text" | "email" | "image" | "conversation" | "indirect";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "unified", label: "🔍 Text & Analysis" },
-  { id: "image",   label: "🖼️ Image" },
-  { id: "email",   label: "📧 Email" },
-];
-
-export default function App() {
-  const [tab, setTab] = useState<Tab>("unified");
+function App() {
+  const [activeTab, setActiveTab] = useState<TabType>("text");
 
   return (
-    <div className="app">
+    <>
       <header className="header">
         <div className="header-content">
           <div className="logo">
             <span className="logo-icon">🛡️</span>
             <div>
               <h1>Prompt Injection Detector</h1>
-              <p>Detect hidden prompt injections in text, images, emails, URLs, and conversations</p>
+              <p>Detect potential prompt injection attacks</p>
             </div>
           </div>
-          <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer" className="api-link">
-            API Docs ↗
+          <a
+            href="http://localhost:5000"
+            className="api-link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            API Docs
           </a>
         </div>
       </header>
 
       <main className="main">
         <div className="tabs">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              className={`tab ${tab === t.id ? "tab-active" : ""}`}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+          <button
+            className={`tab ${activeTab === "text" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("text")}
+          >
+            Text
+          </button>
+          <button
+            className={`tab ${activeTab === "email" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("email")}
+          >
+            Email
+          </button>
+          <button
+            className={`tab ${activeTab === "image" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("image")}
+          >
+            Image
+          </button>
+          <button
+            className={`tab ${activeTab === "conversation" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("conversation")}
+          >
+            Conversation
+          </button>
+          <button
+            className={`tab ${activeTab === "indirect" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("indirect")}
+          >
+            Indirect Attacks
+          </button>
         </div>
 
-        <div className="panel">
-          {tab === "unified" && <UnifiedAnalyzer />}
-          {tab === "image"   && <ImageAnalyzer />}
-          {tab === "email"   && <EmailAnalyzer />}
-        </div>
+        {activeTab === "text" && <TextAnalyzer />}
+        {activeTab === "email" && <EmailAnalyzer />}
+        {activeTab === "image" && <ImageAnalyzer />}
+        {activeTab === "conversation" && <ConversationAnalyzer />}
+        {activeTab === "indirect" && <IndirectAnalyzer />}
       </main>
-    </div>
+    </>
   );
 }
+
+export default App;
