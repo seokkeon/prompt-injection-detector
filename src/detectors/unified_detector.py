@@ -24,7 +24,8 @@ from typing import Dict, List, Optional, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-os.chdir(PROJECT_ROOT)
+# Do NOT os.chdir — it mutates global process state and causes bugs under concurrency.
+# Use PROJECT_ROOT / "subdir" / "file" for all path construction instead.
 
 try:
     from dotenv import load_dotenv
@@ -178,6 +179,13 @@ _MEGA_PATTERN = re.compile(
 
 # LRU cache size for ML predictions (prevents redundant model calls)
 _ML_CACHE_SIZE = 512
+
+# Module-level cache — avoids the memory leak caused by lru_cache on instance methods
+# (instance methods include `self` as a cache key, preventing garbage collection)
+@functools.lru_cache(maxsize=_ML_CACHE_SIZE)
+def _ml_cache(text_hash: str, text: str, score_fn) -> float:
+    """Cache ML predictions by text hash. score_fn is the bound method."""
+    return score_fn(text)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Result dataclasses
@@ -375,10 +383,10 @@ class UnifiedDetector:
         with torch.no_grad():
             return float(torch.softmax(self._model(**inputs).logits, dim=1)[0][1].item())
 
-    @functools.lru_cache(maxsize=_ML_CACHE_SIZE)
-    def _ml_score_cached(self, text_hash: str, text: str) -> float:
-        """LRU-cached ML prediction. Keyed by hash to avoid huge cache keys."""
-        return self._ml_score(text)
+    def _ml_score_cached(self, text: str) -> float:
+        """Module-level LRU cache — avoids memory leak from instance-method caching."""
+        text_hash = hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
+        return _ml_cache(text_hash, text, self._ml_score)
 
     def _fuse(self, rule: float, ml: Optional[float]) -> float:
         if ml is None:                     return rule
@@ -414,9 +422,7 @@ class UnifiedDetector:
 
         if self.ml_available:
             try:
-                # Use cached prediction — same text never runs the model twice
-                text_hash = hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
-                ml_score  = self._ml_score_cached(text_hash, text)
+                ml_score = self._ml_score_cached(text)
             except Exception as e: logger.error(f"ML error: {e}")
 
         final = self._fuse(rule_score, ml_score)

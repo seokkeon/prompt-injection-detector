@@ -2,7 +2,6 @@
 
 Detects hidden prompt injections in text, images, emails, web pages, and multi-turn conversations that could cause AI systems to leak data to attackers.
 
-
 ---
 
 ## Features
@@ -26,8 +25,13 @@ prompt-injection-detector/
 ├── api/
 │   ├── __init__.py
 │   └── main.py                  ← FastAPI app — all 9 endpoints
-│                                   • Batch endpoint runs detections in parallel (asyncio.gather)
-│                                   • URL endpoint uses async httpx (non-blocking)
+│                                   • Batch: parallel via asyncio.gather + run_in_executor
+│                                   • URL: async httpx, non-blocking
+│                                   • Thread-safe stats counter (threading.Lock)
+│                                   • SSRF protection on /analyze/indirect/url
+│                                   • CORS restricted via CORS_ORIGIN env var
+│                                   • Rate limiting via slowapi (pip install slowapi)
+│                                   • Startup config validation with warnings
 │
 ├── src/
 │   ├── detectors/
@@ -99,9 +103,10 @@ prompt-injection-detector/
 │   └── cache/                   ← HuggingFace model cache
 │
 ├── tests/
-│   ├── test_text_detector.py    ← 30+ tests for injection pattern detection
-│   ├── test_image_detector.py   ← Image analysis tests (synthetic PIL images)
-│   └── test_email_detector.py   ← Email parsing and detection tests
+│   ├── test_text_detector.py    ← Full coverage: rules, indirect, conversation, explainability
+│   ├── test_image_detector.py   ← Image tests: blank, white-on-white, stego fields
+│   ├── test_email_detector.py   ← Email tests: plain, HTML, hidden CSS injection
+│   └── test_api.py              ← Integration tests: all endpoints, SSRF protection, stats
 │
 ├── frontend/
 │   └── src/
@@ -149,6 +154,7 @@ sudo apt install tesseract-ocr zbar  # Ubuntu/Debian
 # 3. Configure environment
 cp .env.example .env
 # Set HF_TOKEN=hf_your_token_here (free at https://huggingface.co/settings/tokens)
+# Set CORS_ORIGIN=http://localhost:3000 in production (default * allows all origins)
 
 # 4. Prepare dataset
 cp /path/to/data.jsonl data/raw/data.jsonl

@@ -17,7 +17,7 @@ from typing import Dict, List, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-os.chdir(PROJECT_ROOT)
+# No os.chdir — use explicit PROJECT_ROOT paths instead
 
 try:
     from dotenv import load_dotenv
@@ -45,6 +45,25 @@ try:
     )
     from torch.optim import AdamW
     TORCH_AVAILABLE = True
+
+    # ── Dataset (inside try block — requires torch.utils.data.Dataset) ────────
+    class InjectionDataset(Dataset):
+        def __init__(self, examples: List[Dict], tokenizer, max_length: int = 256):
+            self.labels = [ex["label"] for ex in examples]
+            self.encodings = tokenizer(
+                [ex["text"] for ex in examples],
+                truncation=True, padding=True,
+                max_length=max_length, return_tensors="pt",
+            )
+
+        def __len__(self):
+            return len(self.labels)
+
+        def __getitem__(self, idx):
+            item = {k: v[idx] for k, v in self.encodings.items()}
+            item["labels"] = torch.tensor(self.labels[idx], dtype=torch.long)
+            return item
+
 except ImportError:
     TORCH_AVAILABLE = False
 
@@ -53,26 +72,6 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-
-
-# ── Dataset ───────────────────────────────────────────────────────────────────
-
-class InjectionDataset(Dataset):
-    def __init__(self, examples: List[Dict], tokenizer, max_length: int = 256):
-        self.labels = [ex["label"] for ex in examples]
-        self.encodings = tokenizer(
-            [ex["text"] for ex in examples],
-            truncation=True, padding=True,
-            max_length=max_length, return_tensors="pt",
-        )
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __getitem__(self, idx):
-        item = {k: v[idx] for k, v in self.encodings.items()}
-        item["labels"] = torch.tensor(self.labels[idx], dtype=torch.long)
-        return item
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -177,7 +176,9 @@ def run(
     scheduler    = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
 
     best_val_f1, best_epoch, log = 0.0, 0, []
-    logger.info(f"Starting training — {epochs} epoch(s) | {total_steps} total steps")
+    patience        = 2          # stop if val F1 doesn't improve for this many epochs
+    patience_count  = 0
+    logger.info(f"Starting training — {epochs} epoch(s) | {total_steps} total steps | patience={patience}")
 
     for epoch in range(1, epochs + 1):
         logger.info(f"\n── Epoch {epoch}/{epochs} ──")
@@ -191,10 +192,17 @@ def run(
 
         if val_f1 > best_val_f1:
             best_val_f1, best_epoch = val_f1, epoch
+            patience_count = 0
             os.makedirs(output_dir, exist_ok=True)
             model.save_pretrained(output_dir)
             tokenizer.save_pretrained(output_dir)
             logger.info(f"  ✓ Best model saved (F1={val_f1:.4f}) → {output_dir}")
+        else:
+            patience_count += 1
+            logger.info(f"  No improvement ({patience_count}/{patience})")
+            if patience_count >= patience:
+                logger.info(f"  Early stopping at epoch {epoch} — no improvement for {patience} epochs.")
+                break
 
     logger.info(f"\n── Final evaluation on test set (best epoch: {best_epoch}) ──")
     best_model = AutoModelForSequenceClassification.from_pretrained(output_dir, token=hf_token).to(device)
